@@ -209,14 +209,14 @@ class ChessGame:
                     if pos_of_defender and self.move_cause_self_check(pos_of_defender, new_pos): return pos_of_defender
         except IndexError: return False
     
-    def move_cause_self_check(self, old_pos: Pos, new_pos: Pos=None) -> Optional[Pos]:
-        """Return position of treath to king, if move opens for treath. Else return None."""
+    def move_cause_self_check(self, old_pos: Pos, new_pos: Pos=None) -> bool:
+        """Return True if move causes players king to be in check."""
         if self.turns_king(old_pos) and new_pos:
             icon = self.piece_at(old_pos)
             self.board[old_pos.y][old_pos.x] = '' # Temporarly removes king to incase it gets shielding form it's old_pos
-            treath = self.pos_first_danger(new_pos)
+            is_danger = self.dangerous(new_pos)
             self.board[old_pos.y][old_pos.x] = icon
-            return treath
+            return is_danger
         pos_friendly_king = self.pos_white_king if self.white_turn else self.pos_black_king
         x_step = 1 if pos_friendly_king.x < old_pos.x else -1
         y_step = 1 if pos_friendly_king.y < old_pos.y else -1
@@ -229,15 +229,16 @@ class ChessGame:
                         and (pos_friendly_king.y > old_pos.y) == (pos_friendly_king.y > new_pos.y) )):
                     return
             treath = self.line_treath(old_pos, ('Q','B'), x_step, y_step)
-            if treath: return treath
+            if treath: return True
         
         elif pos_friendly_king.y == old_pos.y and new_pos.y != old_pos.y:
             treath = self.line_treath(old_pos, ('Q','R'), x_step, 0)
-            if treath: return treath
+            if treath: return True
 
         elif pos_friendly_king.x == old_pos.x and new_pos.x != old_pos.x:
             treath = self.line_treath(old_pos, ('Q','R'), 0, y_step)
-            if treath: return treath
+            if treath: return True
+        return False
     
     def valid_input_format(self, inp: str) -> bool:
         """Checks if input string is formated correctly."""
@@ -293,8 +294,7 @@ class ChessGame:
 
             if self.pos_attackers: # in check
                 print('*****', 4.1, 'Check!', [(self.ptc(p), self.piece_at(p)) for p in self.pos_attackers])
-                king_moves = self.potential_king_moves()
-                if not king_moves:
+                if not self.king_can_move():
                     print('*****', 4.2, "Can't move king!")
                     if not self.can_defend_attack():
                         self.game_over = True
@@ -352,7 +352,8 @@ class ChessGame:
             output += chr(65+i) + ' '
         print(output + '\n')
     
-    def can_defend_attack(self) -> Union[list[Pos], bool]:
+    def can_defend_attack(self) -> bool:
+        """Return True if friendly piece can eliminate treath or block it."""
         if len(self.pos_attackers) > 1: return False
         attackers_pos = self.pos_attackers[0]
         defending_pieces = []
@@ -367,35 +368,32 @@ class ChessGame:
         y_step = 1 if pos_friendly_king.y < attackers_pos.y else -1
         if self.diagonal(attackers_pos, pos_friendly_king):            # Steps from king pos, to attackers pos
             defend = self.line_defend(pos_friendly_king, x_step, y_step, min( abs((x_step==1)*(self.width-1)-pos_friendly_king.x), abs((y_step==1)*(self.length-1)-pos_friendly_king.y) ))
-            if defend: defending_pieces.append(defend)
+            if defend: return True
         
         elif pos_friendly_king.y == attackers_pos.y: ## FIX can pawn block now?
             defend = self.line_defend(pos_friendly_king, x_step, 0, abs(pos_friendly_king.x - (x_step==1)*(self.width-1)))
-            if defend: defending_pieces.append(defend)
+            if defend: return True
 
         elif pos_friendly_king.x == attackers_pos.x:
             defend = self.line_defend(pos_friendly_king, 0, y_step, abs(pos_friendly_king.y - (y_step==1)*(self.length-1)) )
-            if defend: defending_pieces.append(defend)
+            if defend: return True
         
-        return defending_pieces
+        return False
     
     def can_attack_pos(self, pos: Pos) -> list[Pos]:
-        """pos can be attacked by friendly pieces"""
-        #self.white_turn = not self.white_turn
-        dangers = self.pos_first_danger(pos)
-        #self.white_turn = not self.white_turn
-        return dangers
+        """pos can be attacked by friendly pieces."""
+        return self.dangerous(pos)
     
     def out_of_board(self, pos: Pos) -> bool:
-        """Return True if pos is outside the board, else False."""
+        """Return True if pos is outside the board."""
         if pos.x < 0 or pos.y < 0: return True
         try:
             self.board[pos.y][pos.x]
             return False
         except IndexError: return True
     
-    def potential_king_moves(self) -> list[Pos]:
-        """Return list of moves king is allowed to make."""
+    def king_can_move(self) -> bool:
+        """Return True if friendly king has legal moves."""
         king = self.pos_white_king if self.white_turn else self.pos_black_king
         king_moves = (king.cadd( 1, 0), king.cadd( 1,-1),
                       king.cadd( 0,-1), king.cadd(-1,-1),
@@ -405,14 +403,12 @@ class ChessGame:
         icon = self.piece_at(king)
         self.board[king.y][king.x] = '' # Temporarly removes king to incase it gets shielding form it's old_pos
         for move in king_moves:
-            if self.out_of_board(move) or self.friendly(move) or self.pos_first_danger(move): continue
-            possible_moves.append(move)
-        print([self.ptc(p) for p in possible_moves])
-        self.board[king.y][king.x] = icon
-        return possible_moves
+            if self.out_of_board(move) or self.friendly(move) or self.dangerous(move): continue
+            return True
+        return False
     
-    def king_in_check(self) -> list[Pos]:
-        """Return true if king is under attack"""
+    def king_in_check(self) -> bool:
+        """Return True if king is under attack."""
         return len(self.pos_attackers) != 0
 
     def check_special_moves(self, old_pos: Pos, new_pos: Pos, icon: str) -> str:
@@ -440,35 +436,23 @@ class ChessGame:
             self.black_can_castle_queenside = (icon != '♔') and not (old_pos.x == 0 and old_pos.y == 0)
 
         return icon
+
     
-    def pos_dangers(self, pos) -> list[Pos]:
-        """Return positions of dangers perpendicular, diagonaly, from knight, and from king; to 'pos'"""
-        dangers = []
+    def dangerous(self, pos) -> bool:
+        """Return True if danger perpendicular, diagonaly, from knight, and from king; to 'pos'"""
         treath = self.perpendicular_treath(pos)
-        if treath: dangers.append(treath)
+        if treath: return True
         treath = self.diagonal_treath(pos)
-        if treath: dangers.append(treath)
+        if treath: return True
         treath = self.knight_treath(pos)
-        if treath: dangers.append(treath)
+        if treath: return True
         treath = self.treath_from_king(pos)
-        if treath: dangers.append(treath)
-        # when iterating trough, add up all the pos that could defend; check if new_pos is one of them
-        return dangers
-    
-    def pos_first_danger(self, pos) -> Optional[Pos]:
-        """Return pos of first dangers perpendicular, diagonaly, from knight, and from king; to 'pos'"""
-        treath = self.perpendicular_treath(pos)
-        if treath: return treath
-        treath = self.diagonal_treath(pos)
-        if treath: return treath
-        treath = self.knight_treath(pos)
-        if treath: return treath
-        treath = self.treath_from_king(pos)
-        if treath: return treath
+        if treath: return True
+        return False
         # when iterating trough, add up all the pos that could defend; check if new_pos is one of them
 
     def knight_treath(self, pos: Pos) -> Union[Pos, bool]:
-        """Return position of first knight danger to 'pos', if no danger return False"""
+        """Return position of first knight danger to 'pos', if no danger return False."""
         possible_knight_moves = (pos.cadd( 2,-1), pos.cadd( 1,-2),
                                  pos.cadd(-1,-2), pos.cadd(-2,-1),
                                  pos.cadd(-2, 1), pos.cadd(-1, 2),
@@ -480,7 +464,7 @@ class ChessGame:
         return False
     
     def treath_from_king(self, pos: Pos) -> bool: # Write like other treath funcs, return Pos if king treath -^
-        """Return True if any of the 8 positions surounding 'pos' is defended by the enemy king, if no danger return False"""
+        """Return True if any of the 8 positions surounding 'pos' is defended by the enemy king, if no danger return False."""
         if pos.y != 0:
             if self.piece_at(pos.cadd(0,-1))  == chr(9818-6*self.white_turn):
                 return True
@@ -502,8 +486,8 @@ class ChessGame:
                 return True
         return False
     
-    def perpendicular_treath(self, pos: Pos) -> Union[Pos, bool]:
-        """Return position of first perpendicular danger to 'pos', if no danger return False"""
+    def perpendicular_treath(self, pos: Pos) -> Optional[Pos]:
+        """Return position of first perpendicular danger to 'pos', if no danger return None."""
         treath = self.line_treath(pos, ('Q','R'), x_step=1, y_step=0)
         if treath: return treath
         treath = self.line_treath(pos, ('Q','R'), x_step=0, y_step=-1)
@@ -512,7 +496,6 @@ class ChessGame:
         if treath: return treath
         treath = self.line_treath(pos, ('Q','R'), x_step=0, y_step=1)
         if treath: return treath
-        return False
     
     def pawn_treath(self, pos: Pos) -> Optional[Pos]:
         """Return position of pawn treathening pos."""
@@ -525,8 +508,8 @@ class ChessGame:
             and self.enemy(potential_pawn, ('P'))):
             return potential_pawn
     
-    def diagonal_treath(self, pos: Pos) -> Union[Pos, bool]:
-        """Return position of first diagonal danger to 'pos', if no danger return False"""
+    def diagonal_treath(self, pos: Pos) -> Optional[Pos]:
+        """Return position of first diagonal danger to 'pos', if no danger return False."""
         treath = self.pawn_treath(pos)
         if treath: return treath
         treath = self.line_treath(pos, ('Q','B'), x_step=1, y_step=-1)
@@ -537,7 +520,6 @@ class ChessGame:
         if treath: return treath
         treath = self.line_treath(pos, ('Q','B'), x_step=1, y_step=1)
         if treath: return treath
-        return False
 
     def castling_pos_dangerous(self, pos: Pos) -> tuple[Union[Pos, bool]]:
         vertical_treath = self.line_treath(pos, ('Q','R'), x_step=0, y_step=1-2*self.white_turn)
@@ -547,6 +529,7 @@ class ChessGame:
             or self.treath_from_king(pos))
     
     def castling_granted(self, old_pos: Pos, new_pos: Pos) -> bool:
+        """Return True if castling is allowed."""
         if new_pos.y != old_pos.y: return False
         step = new_pos.x-old_pos.x
         if abs(step) != self.castling_step: return False
@@ -580,7 +563,7 @@ class ChessGame:
         return self.castling_granted(old_pos, new_pos)
 
     def pawn(self, old_pos: Pos, new_pos: Pos) -> bool:
-        """Check if valid pawn move and remove enemy pawn when doing en pessant"""
+        """Check if valid pawn move and remove enemy pawn when doing en pessant."""
         if old_pos.y - new_pos.y == 2*self.white_turn-1 and abs(new_pos.x - old_pos.x) == 1:
             if self.piece_at(new_pos): return True
             if self.pos_to_be_taken_by_en_pessant and not self.piece_at(new_pos):
@@ -642,7 +625,7 @@ class ChessGame:
         treath = self.discovered_check(old_pos)
         if treath: self.pos_attackers.append(treath)
 
-    def enemy_checked(self, new_pos: Pos) -> Optional[bool]:
+    def enemy_checked(self, new_pos: Pos) -> bool:
         """Return True if new_pos sets enemy king in check."""
         pos_turns_king = self.pos_white_king if self.white_turn else self.pos_black_king
         #pos_enemy_king = self.pos_black_king if self.white_turn else self.pos_white_king
@@ -664,6 +647,7 @@ class ChessGame:
 
         elif self.enemy(new_pos, ('N')) and self.knight_treath(pos_turns_king):
             return True
+        return False
 
     def discovered_check(self, old_pos: Pos) -> Optional[Pos]:
         """When moving a piece, see if a piece behind get a line of attack on the enemy king. Return Pos of attacker or None."""
@@ -681,8 +665,6 @@ class ChessGame:
         elif pos_turns_king.x == old_pos.x:              
             treath = self.line_treath(old_pos, ('Q','R'), 0, y_step)
             if treath: return treath
-
-# FIX - e1 e2 - e8 d8 - a1 a8
 
 def main():
     """board = [['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖'],
