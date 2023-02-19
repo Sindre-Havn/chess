@@ -1,5 +1,7 @@
 import copy
 from typing import Union, Optional
+import numpy as np
+import hashlib
 
 # Unicode chess symbols: https://qwerty.dev/chess-symbols-to-copy-and-paste/
 
@@ -82,10 +84,11 @@ class Pos:
 
 class ChessGame:
     def __init__(self, board):
-        self.auto_moves = ['e1 e2', 'e8 d8', 'a1 a8', 'd8 d7', 'h1 a1', 'h8 d8', 'a1 a7', 'd7 e8', 'a7 e7', 'e8 f8', 'e2 e1', 'f8 g8', 'a8 d8', 'e1 e2', 'g5 g4']
+        #mate self.auto_moves = ['e1 e2', 'e8 d8', 'a1 a8', 'd8 d7', 'h1 a1', 'h8 d8', 'a1 a7', 'd7 e8', 'a7 e7', 'e8 f8', 'e2 e1', 'f8 g8', 'a8 d8', 'e1 e2', 'g5 g4']
+        self.auto_moves = ['a1 a2', 'a8 a7', 'a2 a1', 'a7 a8', 'a1 a2', 'a8 a7', 'a2 a1', 'a7 a8', 'a1 a2', 'a8 a7', 'a2 a1', 'a7 a8']
         self.pos_checks_count = 0
 
-        self.board  = board
+        self.board  = np.asarray(board, dtype=str)
         self.length = len(board)
         self.width  = len(board[0])
         self.white_turn = True
@@ -109,6 +112,7 @@ class ChessGame:
               self.black_can_castle_kingside, self.black_can_castle_queenside)
 
         self.game_over = False
+        self.draw = False
         self.pos_attackers = []
         self.friendly_piece_dict = {'K':chr(9812+6*self.white_turn), 'Q':chr(9813+6*self.white_turn),
                                     'R':chr(9814+6*self.white_turn), 'B':chr(9815+6*self.white_turn),
@@ -116,8 +120,12 @@ class ChessGame:
         self.enemy_piece_dict = {'K':chr(9818-6*self.white_turn), 'Q':chr(9819-6*self.white_turn),
                                  'R':chr(9820-6*self.white_turn), 'B':chr(9821-6*self.white_turn),
                                  'N':chr(9822-6*self.white_turn), 'P':chr(9823-6*self.white_turn)}
-        
-        #self.board_history = dict(hash(self.board)) #### FIX - not in use
+        self.board_positions = dict()
+        self.threefold_repetition_rule()
+        self.turns_since_capture_or_pawn_move = 0
+    
+
+
     
     def switch_turn(self, new_pos: Pos) -> None:
         """Change turn from white to black and opposite. Update king position"""
@@ -301,6 +309,8 @@ class ChessGame:
                         break
             print('Checks: ', self.pos_checks_count)
 
+            self.threefold_repetition_rule()
+
             print('\n\n\n')
             break
     
@@ -309,22 +319,31 @@ class ChessGame:
         """Not enough material for either player to pull of a checkmate"""
         pass
     
-    #### FIX - not in use
     def threefold_repetition_rule(self):
         """The board-setup is identical for the third turn for either player. Including same right to castling and en pessant."""
-        pass
+        hashed_board = hash((self.board.tostring(), self.white_can_castle_kingside, self.white_can_castle_queenside, self.black_can_castle_kingside, self.black_can_castle_queenside))
+        try:
+            self.board_positions[hashed_board] += 1
+        except KeyError: self.board_positions[hashed_board] = 1
+        if self.board_positions[hashed_board] >= 3:
+            self.game_over = True
+            self.draw = True
+        print(self.board_positions)
 
     #### FIX - not in use
-    def fifthy_move_rule(self):
+    def fifthy_move_rule(self, piece, new_pos) -> None:
         """There has been no capture or pawn move last 50 turns for either player."""
+        if piece == chr(9817+6*self.white_turn) or self.piece_at(new_pos):
+            self.turns_since_capture_or_pawn_move = 0
+            return
+        self.turns_since_capture_or_pawn_move += 1
+        if self.turns_since_capture_or_pawn_move >= 50:
+            self.game_over = True
+            self.draw = True
 
     #### FIX - not in use
     def stalemate(self):
         """The currentplayer have no valid moves"""
-        pass
-
-    #### FIX - not in use
-    def draw(self):
         pass
     
     def play(self) -> None:
@@ -332,7 +351,9 @@ class ChessGame:
         while not self.game_over:
             print('Whites turn:', self.white_turn)
             self.move()
-        if self.white_turn:
+        if self.draw:
+            print('Draw!')
+        elif self.white_turn:
             print('Black won!')
         else:
             print('White won!')
