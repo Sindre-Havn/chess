@@ -1,5 +1,5 @@
 import copy
-from typing import Union, Optional
+from typing import Union, Optional, overload
 import numpy as np
 import hashlib
 
@@ -98,7 +98,9 @@ class ChessGame:
                            '♗':self.bishop, '♘':self.knight, '♙':self.pawn}
         self.pos_white_king = None
         self.pos_black_king = None
-        self.set_pos_of_kings()
+        self.piece_count = dict('♕':0, '♖':0, '♗':0, '♘':0, '♙':0,
+                                '♛':0, '♜':0, '♝':0, '♞':0, '♟':0)
+        self.set_pos_of_kings_and_count_pieces()
         self.white_can_castle_kingside  = (self.pos_white_king.y == self.length-1 and
                                            self.piece_at(Pos(self.width-1, self.length-1)) == '♜')
         self.white_can_castle_queenside = (self.pos_white_king.y == self.length-1 and
@@ -140,12 +142,13 @@ class ChessGame:
                                  'R':chr(9820-6*self.white_turn), 'B':chr(9821-6*self.white_turn),
                                  'N':chr(9822-6*self.white_turn), 'P':chr(9823-6*self.white_turn)}
 
-    def set_pos_of_kings(self) -> None:
+    def set_pos_of_kings_and_count_pieces(self) -> None:
         """Set initial Pos for '♔' and '♚' in the chessboard array. Error if not excactly one '♔' and one '♚' in chessboard array."""
         row_count = 0
         for row in self.board:
             col_count = 0
             for piece in row:
+                if not piece: continue
                 if ((piece == '♚') and self.pos_white_king) or ((piece == '♔') and self.pos_black_king):
                     raise ValueError(f"Chessgame does not support multiple pieces of type '{piece}' in chessboard array.")
                 if piece == '♚':
@@ -153,6 +156,7 @@ class ChessGame:
                 elif piece == '♔':
                     self.pos_black_king = Pos(col_count, row_count)
                 col_count += 1
+                self.friendly_piece_dict[piece] += 1
             row_count += 1
         if not(self.pos_white_king and self.pos_white_king):
             raise ValueError("Missing unicode character '♚'  or '♔' in chessboard array")
@@ -176,22 +180,34 @@ class ChessGame:
     def diagonal(self, pos1: Pos, pos2: Pos) -> bool:
         return abs(pos1.x - pos2.x) == abs(pos1.y - pos2.y)
 
+    @overload
+    def friendly(self, icon: str) -> bool:
+        """Return True if icon reprisents piece thats friendly."""
+        return ord(icon) >= 9812+6*self.white_turn and ord(icon) <= 9817+6*self.white_turn
+
+    @overload
     def friendly(self, pos: Pos, piece_types: tuple[str]='ALL') -> bool:
         """Return True if piece at pos is one of the friendly piece_types. Accepts all types by default."""
         piece = self.piece_at(pos)
         if piece == '': return False
-        if piece_types == 'ALL': return ord(piece) >= 9812+6*self.white_turn and ord(piece) <= 9817+6*self.white_turn
+        if piece_types == 'ALL': self.friendly(piece)
 
         for type in piece_types:
             if piece == self.friendly_piece_dict[type]:
                 return True
         return False
+
+    @overload
+    def enemy(self, icon: str) -> bool:
+        """Return True if icon reprisents piece of enemy."""
+        return ord(icon) >= 9818-6*self.white_turn and ord(icon) <= 9823-6*self.white_turn
     
+    @overload
     def enemy(self, pos: Pos, piece_types: tuple[str]='ALL') -> bool:
         """Return True if piece at pos is one of the enemy piece_types. Accepts all types by default."""
         piece = self.piece_at(pos)
         if not piece: return False
-        if piece_types == 'ALL': return ord(piece) >= 9812+6*self.white_turn and ord(piece) <= 9817+6*self.white_turn
+        if piece_types == 'ALL': return self.enemy(piece)
 
         for type in piece_types:
             if piece == self.enemy_piece_dict[type]:
@@ -291,28 +307,75 @@ class ChessGame:
             if self.move_cause_self_check(old_pos, new_pos): continue
             print('*****', 3, 'No selfcheck')
 
-            # cant wait until player to input next move, to check if it is checkmate
+            self.set_pos_of_attackers(old_pos, new_pos)
+            if self.pos_attackers:
+                print('*****', 4.1, 'Check!', [(self.ptc(p), self.piece_at(p)) for p in self.pos_attackers])
+                self.white_turn = not self.white_turn # Temporarly switch turn
+                if self.friendly_king_can_move() or self.friendly_can_defend_attack():
+                    self.white_turn = not self.white_turn # Switch back
+                    continue
+                self.game_over = True
+                break
+
             print('*****', 3, 'King is safe')
+
+            self.fifthy_move_rule(old_pos, icon)
+
             icon = self.check_special_moves(old_pos, new_pos, icon)
             self.board[old_pos.y][old_pos.x] = ''
             self.board[new_pos.y][new_pos.x] = icon
             self.draw_board()
-            self.switch_turn(new_pos)
-            self.set_pos_of_attackers(old_pos, new_pos)
-
-            if self.pos_attackers: # in check
-                print('*****', 4.1, 'Check!', [(self.ptc(p), self.piece_at(p)) for p in self.pos_attackers])
-                if not self.king_can_move():
-                    print('*****', 4.2, "Can't move king!")
-                    if not self.can_defend_attack():
-                        self.game_over = True
-                        break
             print('Checks: ', self.pos_checks_count)
 
             self.threefold_repetition_rule()
-
+            self.switch_turn(new_pos)
             print('\n\n\n')
             break
+    """
+    piece_count = dict('♚':0, '♛':0, '♜':0, '♝':0, '♞':0, '♟':0,
+                       '♔':0, '♕':0, '♖':0, '♗':0, '♘':0, '♙':0)
+    self.dead_position_pieces = ('♗','♝','♘','♞')
+    if self.piece_at(new_pos): piece_count[piece] -= 1
+    for key, value in piece_count.items():
+        if ord(key)
+    
+    for key, value in self.piece_count.items(): # FIX
+        dead_position_count = 0
+        if value > 0 and key not in self.dead_position_pieces:
+            return False
+        dead_position_count += self.piece_count[piece]
+        if 
+        if dead_position_count >= 2: return False
+        if dead_position_count == 2:
+        if self.piece_count['♗']==1 and self.piece_count['♝']==1 and 
+        self.game_over = True
+        self.draw = True
+        return True
+
+    if sum(self.dead_position_pieces)
+    
+    for row in self.board:
+        for piece in row:
+            print()
+
+    if pawn_promotion:
+        piece_count[chr(9817+6*self.white_turn)] -= 1
+        piece_count[icon] += 1
+    
+
+    
+    def stale_mate(self):
+        for row in board:
+            for piece in row:
+                if not piece: continue
+                if self.friendly(piece) and piece.can_move():
+                    return False
+        self.game_over = True
+        se
+
+
+    
+    """
     
     #### FIX - not in use
     def dead_position(self):
@@ -331,9 +394,9 @@ class ChessGame:
         print(self.board_positions)
 
     #### FIX - not in use
-    def fifthy_move_rule(self, piece, new_pos) -> None:
+    def fifthy_move_rule(self, new_pos, icon) -> None:
         """There has been no capture or pawn move last 50 turns for either player."""
-        if piece == chr(9817+6*self.white_turn) or self.piece_at(new_pos):
+        if icon == chr(9817+6*self.white_turn) or self.piece_at(new_pos):
             self.turns_since_capture_or_pawn_move = 0
             return
         self.turns_since_capture_or_pawn_move += 1
@@ -354,9 +417,10 @@ class ChessGame:
         if self.draw:
             print('Draw!')
         elif self.white_turn:
-            print('Black won!')
-        else:
             print('White won!')
+        else:
+            print('Black won!')
+        print('Checks: ', self.pos_checks_count)
     
     def draw_board(self) -> None:
         output = ''
@@ -373,15 +437,14 @@ class ChessGame:
             output += chr(65+i) + ' '
         print(output + '\n')
     
-    def can_defend_attack(self) -> bool:
+    def friendly_can_defend_attack(self) -> bool:
         """Return True if friendly piece can eliminate treath or block it."""
         if len(self.pos_attackers) > 1: return False
         attackers_pos = self.pos_attackers[0]
-        defending_pieces = []
         if self.enemy(attackers_pos, ('N')):
             old_pos = self.can_attack_pos(attackers_pos)
             print('OLD_POS, ', [self.ptc(p) for p in old_pos])
-            if old_pos and self.move_cause_self_check(old_pos): return old_pos
+            if old_pos and self.move_cause_self_check(old_pos): return True
             return False
 
         pos_friendly_king = self.pos_white_king if self.white_turn else self.pos_black_king
@@ -391,7 +454,7 @@ class ChessGame:
             defend = self.line_defend(pos_friendly_king, x_step, y_step, min( abs((x_step==1)*(self.width-1)-pos_friendly_king.x), abs((y_step==1)*(self.length-1)-pos_friendly_king.y) ))
             if defend: return True
         
-        elif pos_friendly_king.y == attackers_pos.y: ## FIX can pawn block now?
+        elif pos_friendly_king.y == attackers_pos.y:
             defend = self.line_defend(pos_friendly_king, x_step, 0, abs(pos_friendly_king.x - (x_step==1)*(self.width-1)))
             if defend: return True
 
@@ -413,19 +476,20 @@ class ChessGame:
             return False
         except IndexError: return True
     
-    def king_can_move(self) -> bool:
+    def friendly_king_can_move(self) -> bool:
         """Return True if friendly king has legal moves."""
         king = self.pos_white_king if self.white_turn else self.pos_black_king
         king_moves = (king.cadd( 1, 0), king.cadd( 1,-1),
                       king.cadd( 0,-1), king.cadd(-1,-1),
                       king.cadd(-1, 0), king.cadd(-1, 1),
                       king.cadd( 0, 1), king.cadd( 1, 1))
-        possible_moves = []
         icon = self.piece_at(king)
         self.board[king.y][king.x] = '' # Temporarly removes king to incase it gets shielding form it's old_pos
         for move in king_moves:
             if self.out_of_board(move) or self.friendly(move) or self.dangerous(move): continue
+            self.board[king.y][king.x] = icon
             return True
+        self.board[king.y][king.x] = icon
         return False
     
     def king_in_check(self) -> bool:
@@ -648,42 +712,42 @@ class ChessGame:
 
     def enemy_checked(self, new_pos: Pos) -> bool:
         """Return True if new_pos sets enemy king in check."""
-        pos_turns_king = self.pos_white_king if self.white_turn else self.pos_black_king
-        #pos_enemy_king = self.pos_black_king if self.white_turn else self.pos_white_king
-        x_step = 1 if pos_turns_king.x < new_pos.x else -1
-        y_step = 1 if pos_turns_king.y < new_pos.y else -1
+        #pos_turns_king = self.pos_white_king if self.white_turn else self.pos_black_king
+        pos_enemy_king = self.pos_black_king if self.white_turn else self.pos_white_king
+        x_step = 1 if pos_enemy_king.x < new_pos.x else -1
+        y_step = 1 if pos_enemy_king.y < new_pos.y else -1
 
-        if self.diagonal(pos_turns_king, new_pos) and self.enemy(new_pos, ('Q','B','P')):
+        if self.diagonal(pos_enemy_king, new_pos) and self.enemy(new_pos, ('Q','B','P')):
             if self.pawn_treath(new_pos): return True
-            if self.line_treath(pos_turns_king, ('Q','B'), x_step, y_step):
+            if self.line_treath(pos_enemy_king, ('Q','B'), x_step, y_step):
                 return True
 
         elif self.enemy(new_pos, ('Q','R')):
-            if pos_turns_king.y == new_pos.y:
-                if self.line_treath(pos_turns_king, ('Q','R'), x_step, 0):
+            if pos_enemy_king.y == new_pos.y:
+                if self.line_treath(pos_enemy_king, ('Q','R'), x_step, 0):
                     return True
-            if pos_turns_king.y == new_pos.y:
-                if self.line_treath(pos_turns_king, ('Q','R'), 0, y_step=y_step):
+            if pos_enemy_king.y == new_pos.y:
+                if self.line_treath(pos_enemy_king, ('Q','R'), 0, y_step=y_step):
                     return True
 
-        elif self.enemy(new_pos, ('N')) and self.knight_treath(pos_turns_king):
+        elif self.enemy(new_pos, ('N')) and self.knight_treath(pos_enemy_king):
             return True
         return False
 
     def discovered_check(self, old_pos: Pos) -> Optional[Pos]:
         """When moving a piece, see if a piece behind get a line of attack on the enemy king. Return Pos of attacker or None."""
-        pos_turns_king = self.pos_white_king if self.white_turn else self.pos_black_king
-        #pos_enemy_king = self.pos_black_king if self.white_turn else self.pos_white_king
-        x_step = 1 if pos_turns_king.x < old_pos.x else -1
-        y_step = 1 if pos_turns_king.y < old_pos.y else -1
+        #pos_turns_king = self.pos_white_king if self.white_turn else self.pos_black_king
+        pos_enemy_king = self.pos_black_king if self.white_turn else self.pos_white_king
+        x_step = 1 if pos_enemy_king.x < old_pos.x else -1
+        y_step = 1 if pos_enemy_king.y < old_pos.y else -1
 
-        if self.diagonal(pos_turns_king, old_pos):
+        if self.diagonal(pos_enemy_king, old_pos):
             treath = self.line_treath(old_pos, ('Q','B'), x_step, y_step)
             if treath: return treath
-        elif pos_turns_king.y == old_pos.y:    
+        elif pos_enemy_king.y == old_pos.y:    
             treath = self.line_treath(old_pos, ('Q','R'), x_step, 0)
             if treath: return treath
-        elif pos_turns_king.x == old_pos.x:              
+        elif pos_enemy_king.x == old_pos.x:              
             treath = self.line_treath(old_pos, ('Q','R'), 0, y_step)
             if treath: return treath
 
