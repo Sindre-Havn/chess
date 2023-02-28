@@ -98,8 +98,6 @@ class ChessGame:
                            '♗':self.bishop, '♘':self.knight, '♙':self.pawn}
         self.pos_white_king = None
         self.pos_black_king = None
-        self.piece_count = dict('♕':0, '♖':0, '♗':0, '♘':0, '♙':0,
-                                '♛':0, '♜':0, '♝':0, '♞':0, '♟':0)
         self.set_pos_of_kings_and_count_pieces()
         self.white_can_castle_kingside  = (self.pos_white_king.y == self.length-1 and
                                            self.piece_at(Pos(self.width-1, self.length-1)) == '♜')
@@ -156,7 +154,6 @@ class ChessGame:
                 elif piece == '♔':
                     self.pos_black_king = Pos(col_count, row_count)
                 col_count += 1
-                self.friendly_piece_dict[piece] += 1
             row_count += 1
         if not(self.pos_white_king and self.pos_white_king):
             raise ValueError("Missing unicode character '♚'  or '♔' in chessboard array")
@@ -185,7 +182,6 @@ class ChessGame:
         """Return True if icon reprisents piece thats friendly."""
         return ord(icon) >= 9812+6*self.white_turn and ord(icon) <= 9817+6*self.white_turn
 
-    @overload
     def friendly(self, pos: Pos, piece_types: tuple[str]='ALL') -> bool:
         """Return True if piece at pos is one of the friendly piece_types. Accepts all types by default."""
         piece = self.piece_at(pos)
@@ -202,7 +198,6 @@ class ChessGame:
         """Return True if icon reprisents piece of enemy."""
         return ord(icon) >= 9818-6*self.white_turn and ord(icon) <= 9823-6*self.white_turn
     
-    @overload
     def enemy(self, pos: Pos, piece_types: tuple[str]='ALL') -> bool:
         """Return True if piece at pos is one of the enemy piece_types. Accepts all types by default."""
         piece = self.piece_at(pos)
@@ -288,6 +283,7 @@ class ChessGame:
             old_idx, new_idx = inp.split()
             old_pos = Pos(ord(old_idx[0].lower())-97, self.length-int(old_idx[1])) # Exmpl: C2 D4 -> 6,2 3,4
             if self.out_of_board(old_pos) or not self.friendly(old_pos): print('Not right piece!'); continue
+            print(old_pos)
             new_pos = Pos(ord(new_idx[0].lower())-97, self.length-int(new_idx[1]))
             if self.friendly(new_pos): print('Friendly fire is not cool!'); continue
             break
